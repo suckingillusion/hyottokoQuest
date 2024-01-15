@@ -1,0 +1,112 @@
+#main {
+    position: relative;
+}
+#fight {
+    position: absolute;
+    top: 300px;
+    left:20px;
+    width: 280px;
+    height:50px;
+}
+#magic1 {
+    position: absolute;
+    left:20px;
+    top: 360px;
+    width: 280px;
+    height:50px;
+}
+#magic2 {
+    position: absolute;
+    left:20px;
+    top: 420px;
+    width: 280px;
+    height:50px;
+}
+ 
+#up {
+    position: absolute;
+    left:85px;
+    top: 300px;
+    width: 50px;
+    height:50px;
+}
+#down {
+    position: absolute;
+    left:85px;
+    top: 420px;
+    width: 50px;
+    height:50px;
+}
+#left {
+    position: absolute;
+    left:20px;
+    top: 360px;
+    width: 50px;
+    height:50px;
+}
+#right {
+    position: absolute;
+    left:150px;
+    top: 360px;
+    width: 50px;
+    height:50px;
+}
+ 
+#retry {
+    position: absolute;
+    left:80px;
+    top: 420px;
+    width: 160px;
+    height:50px;
+}
+ 
+#start {
+    position: absolute;
+    left:80px;
+    top: 420px;
+    width: 160px;
+    height:50px;
+}
+
+#titlebutton{
+  position: absolute;
+  left:150px;
+  top: 200px;
+  width: 160px;
+  height:50px;
+}
+
+#hukkatuinput{
+  position: absolute;
+  left:150px;
+  top: 300px;
+  width: 160px;
+  height:30px;
+}
+
+#menubutton {
+  position: absolute;
+  left: 220px;
+  top: 430px;
+  width: 120px;
+  height: 40px;
+  display: none;
+}
+
+#abutton {
+  position: absolute;
+  left: 410px;
+  top: 430px;
+  width: 50px;
+  height: 40px;
+  display: none;
+}
+
+#bbutton {
+  position: absolute;
+  left: 350px;
+  top: 430px;
+  width: 50px;
+  height: 40px;
+  display: none;
+}
