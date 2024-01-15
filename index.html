@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>HTML</title>
+  
+  <!-- HTML -->
+  
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+ <div id="main">
+     <canvas id="canvas"></canvas>
+     <button id="fight" onclick="NormalAttack()">通常攻撃</button>
+     <button id="magic1" onclick="Magic1()">攻撃魔法</button>
+     <button id="magic2" onclick="Magic2()">回復魔法</button>
+  
+     <button id="up"></button>
+     <button id="down"></button>
+     <button id="left"></button>
+     <button id="right"></button>
+     
+     <button id="titlebutton" onclick="titleOnclick()">はじめる</button>
+     <input id="hukkatuinput" type="text" placeholder="ふっかつのじゅもん">
+     
+     <button id="menubutton" onclick="menuOnclick()">メニュー</button>
+     <button id="abutton" onclick="aOnclick()">A</button>
+     <button id="bbutton" onclick="bOnclick()">B</button>
+  <!-- Project -->
+  <script src="map.js"> </script>
+  <script src="item.js"> </script>
+  <script src="main.js"></script>
+</body>
+</html>
