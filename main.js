@@ -248,6 +248,38 @@ class Battle{
     this.canSelectMove = true; //連続でmoveしないように
     
     this.message = new MessageOnBattle();
+    //eventsとeventtimesを設定
+    let battleMessageEventSet = () =>{
+      this.message.events['e:敵画像を消す'] = () => {
+        this.isenemyimgdissaper = true;
+      };
+      this.message.eventtimes['e:敵画像を消す'] = 100;
+      this.message.events['e:経験値獲得'] = () => {
+        player.exp += this.enemy.exp;
+      };
+      this.message.eventtimes['e:経験値獲得'] = 100;
+      this.message.events['e:戦闘終了'] = () => {
+        setTimeout(() => {
+          game.battleEnd(this.option);
+        }, 1000);
+      };
+      this.message.eventtimes['e:戦闘終了'] = 5000;
+      this.message.events['e:次のターンへ'] = () => {
+        this.player.hp -= Math.round(this.enemy.pow / _playerGuardUp);
+        this.selectedcard = [0, 0, 0, 0, 0, 0, 0, 0];
+        this.turn++;
+      };
+      this.message.eventtimes['e:次のターンへ'] = 1000;
+      this.message.events['e:プレイヤーのHPを0に'] = () => {
+          this.player.hp = 0;
+      };
+      this.message.eventtimes['e:プレイヤーのHPを0に'] = 100;
+      this.message.events['e:敗北'] = () => {
+        game.battleLose(this.option);
+      };
+      this.message.eventtimes['e:敗北'] = 5000;
+    };
+    battleMessageEventSet();
     
     this.turn = 1;
     this.isenemyimgdissaper = false;
@@ -401,6 +433,8 @@ class Battle{
       }else if(this.selected >=1 && this.selected < 11){
         this.selectedcard[this.selected -1] = -this.selectedcard[this.selected -1] +1; //0なら1に、1なら0に
       }else if(this.selected == 12){
+        //「たたかう」の処理
+        
         this.selected = 11;
         //選択したカードをランダムに変える
         for(let n=0;n<8;n++){
@@ -488,6 +522,7 @@ class Battle{
         this.enemy.hp -= _dames[0] + _dames[1] + _dames[2] + _dames[3] + _dames[4] + _dames[5] + _dames[6] + _dames[7] ;
         if(this.enemy.hp <=0){
           this.enemy.hp = 0;
+          /*
           this.message.event = () => {
             this.isenemyimgdissaper = true;
             this.message.event = ()=>{
@@ -499,9 +534,13 @@ class Battle{
               }
             }
           }
+          */
+          
           _messages.push('event');
+          _messages.push('e:敵画像を消す');
           _messages.push(this.enemy.name + 'をやっつけた!');
           _messages.push('event');
+          _messages.push('e:経験値獲得');
           
           let pexp = player.exp + this.enemy.exp;
           let pmexp = player.maxexp;
@@ -513,28 +552,37 @@ class Battle{
           }
            
            _messages.push('event')
+           _messages.push('e:戦闘終了');
         }else {
           //敵の攻撃
           
           _messages.push(this.enemy.name + 'の攻撃!\n' + Math.round(this.enemy.pow / _playerGuardUp) + 'ダメージくらった!');
+          let _theEvename = 'e:次のターンへ';
+          /*
           this.message.event = ()=>{
             this.player.hp -= Math.round(this.enemy.pow / _playerGuardUp);
             this.selectedcard = [0,0,0,0,0,0,0,0];
             this.turn++;
           };
+          */
           if(this.player.hp <=Math.round(this.enemy.pow / _playerGuardUp)){
+            /*
             this.message.event = () => {
               this.player.hp = 0;
               this.message.event = ()=>{
                 game.battleLose(this.option);
               }
             }
+            */
+            _theEvename = 'e:敗北';
             _messages.push('event');
+            _messages.push('e:プレイヤーのHPを0に');
             _messages.push('ひょっおほ先生は\nやられた!')
             
             
           }
           _messages.push('event');
+          _messages.push(_theEvename);
           if (this.option == 'チュートリアル' && this.turn == 1) {
             _messages.push('『1,2,3みたいに\n順番になるように攻撃すると\n勢いがつきますね!』')
           }
@@ -544,7 +592,7 @@ class Battle{
         this.message.messageInterval = 500;
         this.message.read();
         
-        //selected == 12終わり
+        //selected == 12　「たたかう」の処理　終わり
       }
     }else if(this.message.message != '' && this.message.canMessageNext == true){
       this.message.read();
@@ -566,6 +614,8 @@ class MessageNext{
     this.face = null; //Image
     this.eventtime = 1000;
     
+    this.events = {}; //eventname:functionを都度入れていく。会話が終わると中身を空に。
+    this.eventtimes = {}; //eventname:timeを都度入れていく。会話が終わると中身を空に。
   }
   
   add(txtsArray){
@@ -590,14 +640,15 @@ class MessageNext{
   }
   
   eventstart(){
-    this.event();
-    this.txts.splice(0, 1);
+    let _eventname = this.txts[1];
+    this.events[_eventname]();
+    this.txts.splice(0, 2);
     setTimeout(()=> {
       this.read();
-    }, this.eventtime);
+    }, this.eventtimes[_eventname]);
   }
   
-  event(){}  //オーバーライドする
+  //    event(){}  //オーバーライドする
   
   syokika(){
     message = '';
@@ -605,7 +656,8 @@ class MessageNext{
     this.face = null; //Image
     this.eventtime = 1000;
     canMessageNext = false;
-    this.event = ()=>{};
+    this.events = {};
+    this.eventtimes = {};
   }
   Draw(){
     ctx.beginPath();
@@ -644,7 +696,9 @@ class MessageOnBattle {
     this.eventtime = 10;
     this.canMessageNext = false;
     this.messageInterval = 500;
-
+    
+    this.events = {};
+    this.eventtimes = {};
   }
 
   add(txtsArray) {
@@ -680,14 +734,15 @@ class MessageOnBattle {
   }
 
   eventstart() {
-    this.event();
-    this.txts.splice(0, 1);
+    let _eventname = this.txts[1];
+    this.events[_eventname]();
+    this.txts.splice(0, 2);
     setTimeout(() => {
       this.read();
-    }, this.eventtime);
+    }, this.eventtimes[_eventname]);
   }
 
-  event() {} //オーバーライドする
+  // event() {} //オーバーライドする
 
   syokika() {
     this.message = '';
@@ -695,7 +750,7 @@ class MessageOnBattle {
     this.face = null; //Image
     this.eventtime = 1000;
     this.canMessageNext = false;
-    this.event = () => {};
+    
   }
   Draw() {
     if(this.message == '' || this.message == 'event')return;
@@ -1248,7 +1303,7 @@ class MessageOnBattle {
            _face.src = './image/face_docter.png';
            messageNext.face = _face;
            messageNext.eventtime = 1000;
-           messageNext.event = ()=>{
+           /*messageNext.event = ()=>{
              game.scene.MoveEvent(0,5,0,3);
              setTimeout(()=>{
                messageNext.eventtime = 2000;
@@ -1256,17 +1311,27 @@ class MessageOnBattle {
              messageNext.event = ()=>{
                blackoutFunc(null,2000);
              };
+           }; */
+           messageNext.events['a'] = ()=>{
+             game.scene.MoveEvent(0,5,0,3);
            };
+           messageNext.eventtimes['b'] = 1000;
+           messageNext.events['b'] = ()=>{
+             blackoutFunc(null,2000);
+           };
+           messageNext.eventtimes['b'] = 2000;
          
            messageAdd([
             'おお、来ましたね',
             'event',
+            'a',
             '地震でしょうか…',
             'どうやら我々は、閉じ込められて\nしまったようです',
             'とは言っても先生は\n遠隔操作のロボットですけどね…',
             '脱出の手助けを、\nどうかお願いしたいのですが…',
             'その前に先生の修理をしましょうか',
             'event',
+            'b',
             'いやはや…',
             '備品が足りず、足3本しか直せませんでした',
             'さて…',
@@ -1286,7 +1351,7 @@ class MessageOnBattle {
            setTimeout(()=>{
              this.ArrMap[5][9] = '粘';
            },600);
-           messageNext.event = () => {
+           /*messageNext.event = () => {
              blackoutFunc(null,1000);
              setTimeout(() => {
                messageNext.eventtime = 200;
@@ -1303,11 +1368,30 @@ class MessageOnBattle {
                game.battleAdd(_enemy,'チュートリアル');
              };
            };
+           */
+           messageNext.events['a'] = ()=>{
+             blackoutFunc(null,1000);
+           };
+           messageNext.eventtimes['a'] = 1000;
+           messageNext.events['b'] = () => {
+             let _imgsrc = './image/enemy_slime.png';
+             let _enemy = {
+               name: 'スライム',
+               hp: 40,
+               pow: 5,
+               exp: 10,
+               imgsrc: _imgsrc
+             };
+             game.battleAdd(_enemy, 'チュートリアル');
+           };
+           messageNext.eventtimes['b'] = 200;
        
            messageAdd([
                    'event',
+                   'a',
                    'なんと、スライムが化けていた!!',
-                   'event']);
+                   'event',
+                   'b']);
            player.needflag++;
            return;
          }
@@ -1615,14 +1699,14 @@ class MessageOnBattle {
  function blackoutFunc(nextField = null,antenjikan = 0,playerxzahyou = null,playeryzahyou = null){
    blackout[0] = 0.01;
    blackout[1] = nextField;
-   if(playerx != null){
+   if(playerxzahyou != null){
      if(nextField == null){
        game.scene.PlayerX = playerxzahyou * blockSize;
      }else{
        blackout[1].PlayerX = playerxzahyou * blockSize;
      }
    }
-   if(playery != null){
+   if(playeryzahyou != null){
      if (nextField == null) {
        game.scene.PlayerY = playeryzahyou * blockSize;
      } else {
