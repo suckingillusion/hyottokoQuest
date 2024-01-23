@@ -241,6 +241,7 @@ class Battle{
     
     this.playerPowUp = 1; //攻撃力アップ倍率
     this.enemyGuardDown = 1; //防御力ダウン倍率
+    this.playerGuardUp = 1;
     
     this.selectedcard = [0,0,0,0,0,0,0,0];  //選択されたら1になる
     this.card = [randomNum(1,8),randomNum(1,8),randomNum(1,8),randomNum(1,8),randomNum(1,8),randomNum(1,8),randomNum(1,8),randomNum(1,8)];
@@ -265,7 +266,7 @@ class Battle{
       };
       this.message.eventtimes['e:戦闘終了'] = 5000;
       this.message.events['e:次のターンへ'] = () => {
-        this.player.hp -= Math.round(this.enemy.pow / _playerGuardUp);
+        this.player.hp -= Math.round(this.enemy.pow / this.playerGuardUp);
         this.selectedcard = [0, 0, 0, 0, 0, 0, 0, 0];
         this.turn++;
       };
@@ -446,7 +447,7 @@ class Battle{
         //ダメージの算出
         this.playerPowUp = 1;
         this.enemyGuardDown = 1;
-        let _playerGuardUp = 1;
+        this.playerGuardUp = 1;
         let _tumerenzoku = 1;
         let _tutirenzoku = 1;
         let _dames = [];
@@ -556,7 +557,7 @@ class Battle{
         }else {
           //敵の攻撃
           
-          _messages.push(this.enemy.name + 'の攻撃!\n' + Math.round(this.enemy.pow / _playerGuardUp) + 'ダメージくらった!');
+          _messages.push(this.enemy.name + 'の攻撃!\n' + Math.round(this.enemy.pow / this.playerGuardUp) + 'ダメージくらった!');
           let _theEvename = 'e:次のターンへ';
           /*
           this.message.event = ()=>{
@@ -565,7 +566,7 @@ class Battle{
             this.turn++;
           };
           */
-          if(this.player.hp <=Math.round(this.enemy.pow / _playerGuardUp)){
+          if(this.player.hp <=Math.round(this.enemy.pow / this.playerGuardUp)){
             /*
             this.message.event = () => {
               this.player.hp = 0;
@@ -1411,7 +1412,7 @@ class MessageOnBattle {
        player.kaisyuuki[0] = 1;
        this.ArrMap[5][9] = '、';
        
-       blackoutFunc(null,0,8,14);
+       blackoutFunc(null,1000,8,14);
        console.log('flag:' + player.needflag);
        messageAdd([
          '『おそらく今のモンスターは\n研究室から脱走したのでしょう』',
