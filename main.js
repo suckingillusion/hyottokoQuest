@@ -9,7 +9,7 @@ let canMessageNext = false;  //決定ボタンを押して次のメッセージ�
 let messageOnBattle = ''; // 戦闘中に表示されるメッセージ
  
 let showCommandButtons = false; // 戦闘コマンドを表示させるかどうか？
-let blackout = [0,null,'up',0];  //ブラックアウトの透明度,次のシーン,透明度を上げるか下げるか,暗転の時間(ms)
+let blackout = [0,null,'up',0,25];  //ブラックアウトの透明度,次のシーン,透明度を上げるか下げるか,真っ暗な時間(ms),フェードインフェードアウトに要するフレーム。blackout[0]>0になるとDraw()によってブラックアウトする。blackoutFunc()で値を入れる。
  const SCENE_BLACK_OUT = -1; // シーンとシーンの切り替わりの背景が黒一色の状態
  const SCENE_MY_CASTLE = 1; // 自分の城
  const SCENE_FIELD = 2; // フィールド上
@@ -18,7 +18,8 @@ let blackout = [0,null,'up',0];  //ブラックアウトの透明度,次のシ�
  const SCENE_BOSS_BATTLE = 5;
 
 
-let appearanceRate = 0.01; // ザコ敵出現率
+let walkCountAftreBattle = 0; //最後にバトルを行ってから歩いた歩数。連続でのエンカウントを防ぐため。バトルやマップ移動で0にする。
+const minAppearanceWalkCount = 6; //walkCountAfterBattleがこの値以下ならエンカウントしない
 
 // 描画処理用のイメージ
 const blockSize = 32;
@@ -46,6 +47,10 @@ let monitorImage = new Image(blockSize, blockSize);
 monitorImage.src = './image/monitor.png';
 let slimeImage = new Image(blockSize, blockSize);
 slimeImage.src = './image/slime.png';
+let jumonMonitorImage = new Image(blockSize, blockSize);
+jumonMonitorImage.src = './image/jumonMonitor.png';
+let toImage = new Image(blockSize, blockSize);
+toImage.src = './image/to.png';
 
 
 
@@ -83,7 +88,7 @@ class Player {
     this.items = [];
     this.soubi = [0,0,0,0,0,0,0,0];
     this.foot = 1;
-    this.takaraflag = [0,0];
+    this.openedTakarabakoNames = [];
     this.kaisyuuki = [0,0,0,0,0,0,0,0,0,0,0,0,0];
     this.needflag = 0; //ゲーム進行に必要な避けれないフラグ　加算していく
 
@@ -108,6 +113,10 @@ let $hukkatuinput = document.getElementById('hukkatuinput');
 let $menubutton = document.getElementById('menubutton');
 let $abutton = document.getElementById('abutton');
 let $bbutton = document.getElementById('bbutton');
+
+function $(id){
+  return document.getElementById(id);
+}
  
 
  
@@ -135,40 +144,41 @@ class Game{
   //現在のfield(=BaseMapを継承したクラス。game.sceneに入れる)や、バトルを担う
   constructor(){
     this.scene = title;  //BaseMapインスタンスを入れる
+    this.isTitle = true;
     this.dontmovetime = 0;
     
     this.battle = null;  //Battleインスタンスを入れる
+    this.cantmove = false //戦闘後すぐ移動できることを防ぐ。dontmoveと異なりmovebuttonは表示される。
+    
+    this.menu = null;
     
     
   }
-  add(map){
-    this.scene = map;
+  add(mapobj){
+    this.scene = mapobj;
   }
-  battleAdd(enemyobj,option = null){
+  battleAdd(enemynum,option = null){
     isMenuOpen = false;
     menuClose();
     messageNext.syokika();
     ShowMenuButtons(false);
     isbattlenow = true;
-    this.battle = new Battle(enemyobj,option);
+    this.battle = new Battle(enemynum,option);
   }
   battleEnd(option = null){
+    walkCountAftreBattle = 0;
     ShowMenuButtons(true);
     isbattlenow = false;
     this.battle = null;
+    setTimeout(()=>{this.cantmove = false;},800);
     if(option != null){
-      this.dontmove();
       this.scene.battleEndEvent(option);
     }
   }
   battleLose(option = null){
     this.battleEnd();
     if(option == null){
-      homeField = new HomeField(homemap);
-      homeField.refresh();
-      homeField.PlayerX = 8*blockSize;
-      homeField.PlayerY = 16*blockSize;
-      blackoutFunc(homeField,3000);
+      blackoutFunc(1,3000,8,16);
       setTimeout(()=>{
         let _face = new Image();
         _face.src = './image/face_docter.png';
@@ -178,26 +188,37 @@ class Game{
     }
   }
   Draw(){
-    
-    this.scene.Draw();
-    if(this.dontmovetime > 0)ShowMoveButtons(false); //this.dontmovetimeが0になると表示されるのは、BaceMap.Draw()での処理
+    if(this.menu == null){
+      this.scene.Draw();
+    }
+
+    ShowMoveButtons(message == '' && !cleared && started && this.dontmovetime == 0 && this.isTitle == false);  //BaceMap.Draw()でも同様の処理あり
     
     if(this.battle != null){
+      this.menu = null;
       if(this.battle.finish == true){
-        //バトルが終了していたら
+          //バトルが終了していたら
         ShowMenuButtons(true);
         isbattlenow = false;
         this.battle = null;
       }
     }
+    
+    if(this.menu != null){
+      this.menu.Draw();
+    }
+    
     if(isbattlenow == true)this.battle.Draw();
   }
   Move(direct){
+    if(this.cantmove == true)return;
     if(this.dontmovetime > 0)return;
-    if(isbattlenow == false){
-      this.scene.Move(direct)
+    if(isbattlenow == true){
+      this.battle.Move(direct)
+    }else if(this.menu != null){
+      this.menu.Move(direct);
     }else{
-      this.battle.Move(direct);
+      this.scene.Move(direct);
     }
   }
   
@@ -209,14 +230,22 @@ class Game{
   }
   aclick(){
     if(isbattlenow == false){
-      this.scene.aclick();
+      if(this.menu != null){
+        this.menu.aclick();
+      }else{
+        this.scene.aclick();
+      }
     }else{
       this.battle.aclick();
     }
   }
   bclick(){
     if (isbattlenow == false) {
-      this.scene.bclick();
+      if(this.menu != null){
+        this.menu.bclick();
+      }else{
+        this.scene.bclick();
+      }
     } else {
       this.battle.bclick();
     }
@@ -224,8 +253,9 @@ class Game{
 }
 
 class Battle{
-  constructor(_enemyobj,_option = null){
-    this.enemy = Object.assign({}, JSON.parse(JSON.stringify(_enemyobj)));
+  constructor(_enemynum,_option = null){
+    this.enemy = Object.assign({}, JSON.parse(JSON.stringify(enemies[_enemynum])));
+    this.enemyImage = enemyImages[this.enemy.num];  //ImageObj
     this.option = _option;
     this.player = Object.assign({}, JSON.parse(JSON.stringify(player)));
     this.playersoubiobjs = [];
@@ -253,6 +283,7 @@ class Battle{
     let battleMessageEventSet = () =>{
       this.message.events['e:敵画像を消す'] = () => {
         this.isenemyimgdissaper = true;
+        game.cantmove = true;
       };
       this.message.eventtimes['e:敵画像を消す'] = 100;
       this.message.events['e:経験値獲得'] = () => {
@@ -260,9 +291,8 @@ class Battle{
       };
       this.message.eventtimes['e:経験値獲得'] = 100;
       this.message.events['e:戦闘終了'] = () => {
-        setTimeout(() => {
-          game.battleEnd(this.option);
-        }, 1000);
+        this.finish = true;
+        game.battleEnd(this.option);
       };
       this.message.eventtimes['e:戦闘終了'] = 5000;
       this.message.events['e:次のターンへ'] = () => {
@@ -276,6 +306,7 @@ class Battle{
       };
       this.message.eventtimes['e:プレイヤーのHPを0に'] = 100;
       this.message.events['e:敗北'] = () => {
+        this.finish = true;
         game.battleLose(this.option);
       };
       this.message.eventtimes['e:敗北'] = 5000;
@@ -324,11 +355,11 @@ class Battle{
     ctx.closePath();
    
     if(this.isenemyimgdissaper == false){
-      let img = new Image();
-      img.src = this.enemy.imgsrc;
-      ctx.beginPath();
-      ctx.drawImage(img,0,0,1200,1600,(can.width - 3*50)/2,50,3 * 60,4 * 50);
-      ctx.closePath();
+        ctx.beginPath();
+        ctx.drawImage(this.enemyImage,0,0,1200,1600,(can.width - 3*50)/2,50,3 * 60,4 * 50);
+        ctx.closePath();
+        
+      
     }
     
     
@@ -355,13 +386,13 @@ class Battle{
       ctx.closePath();
     }
     
-    if(this.message.message == ''){
+    if(this.message.message == '' && this.isenemyimgdissaper == false){
       ctx.beginPath();
       ctx.fillStyle = 'white';
       ctx.font = "16px ＭＳ ゴシック";
       ctx.fillText('こうかん',220 +40,290 +30);
       ctx.fillText('たたかう',220 +40,290 +30*2);
-      if(this.option != 'チュートリア' && this.option != 'ボス'){
+      if(this.option != 'チュートリアル' && this.option != 'ボス'){
         ctx.fillText('にげる',220 +40,290 +30*3);
       }
       ctx.fillText('とくぎ',220 + 40 + 110,290 +30);
@@ -393,6 +424,8 @@ class Battle{
     
   }
   Move(direct){
+    if(this.isenemyimgdissaper == true)return;
+    
     if(this.message.message == '' && this.canSelectMove == true){
       this.canSelectMove = false;
       setTimeout(()=>{this.canSelectMove = true},150);
@@ -428,7 +461,7 @@ class Battle{
     }
   }
   aclick(){
-    if(this.message.message == '' && this.canSelectMove == true){
+    if(this.message.message == '' && this.canSelectMove == true && this.isenemyimgdissaper == false){
       if(this.selected == 11){
         this.selected = 1;
       }else if(this.selected >=1 && this.selected < 11){
@@ -523,33 +556,24 @@ class Battle{
         this.enemy.hp -= _dames[0] + _dames[1] + _dames[2] + _dames[3] + _dames[4] + _dames[5] + _dames[6] + _dames[7] ;
         if(this.enemy.hp <=0){
           this.enemy.hp = 0;
-          /*
-          this.message.event = () => {
-            this.isenemyimgdissaper = true;
-            this.message.event = ()=>{
-              player.exp += this.enemy.exp;
-              this.message.event = ()=>{
-                setTimeout(()=>{
-                  game.battleEnd(this.option);
-                },1000);
-              }
-            }
-          }
-          */
           
           _messages.push('event');
           _messages.push('e:敵画像を消す');
+          _messages.push('intervalChange');
+          _messages.push('1000');
           _messages.push(this.enemy.name + 'をやっつけた!');
+          _messages.push('intervalReset');
           _messages.push('event');
           _messages.push('e:経験値獲得');
+          _messages.push('経験値を' + this.enemy.exp + '獲得!');
           
           let pexp = player.exp + this.enemy.exp;
           let pmexp = player.maxexp;
           while(pexp >= pmexp){
             pexp -= pmexp;
             pmexp += 20;
-            _messages.push('最大HPが増えた!');
             _messages.push('lvup');
+            _messages.push('最大HPが増えた!');
           }
            
            _messages.push('event')
@@ -559,22 +583,9 @@ class Battle{
           
           _messages.push(this.enemy.name + 'の攻撃!\n' + Math.round(this.enemy.pow / this.playerGuardUp) + 'ダメージくらった!');
           let _theEvename = 'e:次のターンへ';
-          /*
-          this.message.event = ()=>{
-            this.player.hp -= Math.round(this.enemy.pow / _playerGuardUp);
-            this.selectedcard = [0,0,0,0,0,0,0,0];
-            this.turn++;
-          };
-          */
+
           if(this.player.hp <=Math.round(this.enemy.pow / this.playerGuardUp)){
-            /*
-            this.message.event = () => {
-              this.player.hp = 0;
-              this.message.event = ()=>{
-                game.battleLose(this.option);
-              }
-            }
-            */
+
             _theEvename = 'e:敗北';
             _messages.push('event');
             _messages.push('e:プレイヤーのHPを0に');
@@ -585,12 +596,15 @@ class Battle{
           _messages.push('event');
           _messages.push(_theEvename);
           if (this.option == 'チュートリアル' && this.turn == 1) {
-            _messages.push('『1,2,3みたいに\n順番になるように攻撃すると\n勢いがつきますね!』')
+            _messages.push(
+              'intervalChange',
+              '1000',
+              '『1,2,3みたいに\n順番になるように攻撃すると\n勢いがつきますね!』')
           }
         }
         //console.log(_messages);
         this.message.add(_messages);
-        this.message.messageInterval = 500;
+        this.message.messageInterval = 200;
         this.message.read();
         
         //selected == 12　「たたかう」の処理　終わり
@@ -612,8 +626,10 @@ class Battle{
 class MessageNext{
   constructor(){
     this.txts = [''];
-    this.face = null; //Image
+    this.face = null; //Imageobj
     this.eventtime = 1000;
+    this.messageInterval = 1000;
+    this.defaltInterval = 1000;
     
     this.events = {}; //eventname:functionを都度入れていく。会話が終わると中身を空に。
     this.eventtimes = {}; //eventname:timeを都度入れていく。会話が終わると中身を空に。
@@ -630,13 +646,21 @@ class MessageNext{
       this.syokika();
     }else if(this.txts[0] == 'event'){
       this.eventstart();
+    }else if(this.txts[0] == 'intervalChange') {
+        this.messageInterval = this.txts[1];
+        this.txts.splice(0, 2);
+        this.read();
+    }else if (this.txts[0] == 'intervalReset') {
+      this.intervalReset();
+      this.txts.splice(0, 1);
+      this.read();
     }else{
       canMessageNext = false;
       message = this.txts[0];
       this.txts.splice(0,1);
       setTimeout(function(){
         canMessageNext = true;
-      },1000);
+      },this.messageInterval);
     }
   }
   
@@ -656,10 +680,16 @@ class MessageNext{
     this.txts = [''];
     this.face = null; //Image
     this.eventtime = 1000;
+    this.messageInterval = this.defaltInterval;;
     canMessageNext = false;
     this.events = {};
     this.eventtimes = {};
   }
+  
+  intervalReset() {
+    this.messageInterval = this.defaltInterval;
+  }
+  
   Draw(){
     ctx.beginPath();
     ctx.fillStyle = '#000';
@@ -696,7 +726,8 @@ class MessageOnBattle {
     this.face = null; //Imageオブジェクト
     this.eventtime = 10;
     this.canMessageNext = false;
-    this.messageInterval = 500;
+    this.defaltInterval = 200;
+    this.messageInterval = 200;
     
     this.events = {};
     this.eventtimes = {};
@@ -716,6 +747,14 @@ class MessageOnBattle {
     }else if(this.txts[0] == 'lvup'){
       this.lvup();
       this.txts.splice(0, 1);
+      this.read();
+    }else if(this.txts[0] == 'intervalChange'){
+      this.messageInterval = this.txts[1];
+      this.txts.splice(0, 2);
+      this.read();
+    }else if(this.txts[0] == 'intervalReset'){
+      this.intervalReset();
+      this.txts.splice(0,1);
       this.read();
     } else {
       this.canMessageNext = false;
@@ -743,7 +782,6 @@ class MessageOnBattle {
     }, this.eventtimes[_eventname]);
   }
 
-  // event() {} //オーバーライドする
 
   syokika() {
     this.message = '';
@@ -751,8 +789,14 @@ class MessageOnBattle {
     this.face = null; //Image
     this.eventtime = 1000;
     this.canMessageNext = false;
+    this.messageInterval = this.defaltInterval;
     
   }
+  
+  intervalReset(){
+    this.messageInterval = this.defaltInterval;
+  }  
+  
   Draw() {
     if(this.message == '' || this.message == 'event')return;
     ctx.beginPath();
@@ -827,19 +871,69 @@ class MessageOnBattle {
        const arr2 = [...arr[i]];
        this.ArrMap.push(arr2);
      }
+     
+     this.canMoveTiles = ['、'];
+     this.onTiles = ['Ｍ','空','箱','糞','医','画','粘','面','戸'];  //タイルの上に重ねて描画するタイル
+     this.doorTiles = ['戸'];
+     this.underTile = '、';  //this.onTilesの下地に使うタイル
+     this.tileImages = {
+       '棚':mekatanaImage,
+       '、':flatImage,
+       '壁':wallImage,
+       'Ｍ':mountainImage,
+       'M':mountainImage,
+       '箱':boxImage,
+       '空':boxemptyImage,
+       '糞':unkoImage,
+       '粘':slimeImage,
+       '医':docterImage,
+       '画':monitorImage,
+       '面':jumonMonitorImage,
+       '戸':toImage
+     };
+     
+
+     
  
      this.RowMax = this.ArrMap.length;
      this.ColMax = this.ArrMap[0].length;
      
-     this.takara = [];  //配列内に[row,col,itemnumber]を入れる
+     this.takara = [];  //配列内に[row,col,itemnumber,takarabakoname]を入れる
      this.talking = false;
+     
+     this.isAppearance = false; //エンカウントするマップか
+     this.appearanceRate = 0; //エンカウント率%
+     this.appearanceEnemyNums = []; //this.setEnemy()でenemynumを入れていく。
+     this.enemySyutugendos = []; //計算用。出現度を加算していったものを入れる。例:出現度が1,2,3の敵なら、[1,3,6]。randomNum(1,6)に対して0<x<=1,1<x<=3,3<x<=6と使う
+   }
+   
+   setEnemy(_enemyNum,_syutugendo = 100){
+     if(_syutugendo <= 0)return;
+     
+     this.isAppearance = true;
+     this.appearanceRate = 15;
+     
+     this.appearanceEnemyNums.push(_enemyNum);
+     if(this.appearanceEnemyNums.length == 1){
+       this.enemySyutugendos.push(_syutugendo);
+     }else{
+       this.enemySyutugendos.push(_syutugendo + this.enemyRates[this.appearanceEnemyNums.length -2]);
+     }
+   }
+   
+   resetEnemy(){
+     this.isAppearance = false; //エンカウントするマップか
+     this.appearanceRate = 0; //エンカウント率%
+     this.appearanceEnemyNums = []; //this.setEnemy()で[出現する敵,出現度]を入れていく。
+     this.enemyRateToatal = 0; //敵ごとの出現度の合計
+     this.enemyRates = []; //計算用
    }
    
    getTakara(takaraarrnum){
          if(this.takara.length == 0)return;
          
          StopPlayer();
-         if (this.talking || player.items.includes(this.takara[takaraarrnum][2]) == true)
+         if (this.talking || player.openedTakarabakoNames.includes(this.takara[takaraarrnum][3]) == true)
            return;
      
          //console.log('talk');
@@ -854,6 +948,7 @@ class MessageOnBattle {
            //player.takaraflag[0] = 1;
            this.ArrMap[this.takara[takaraarrnum][0]][this.takara[takaraarrnum][1]] = '空';
            player.items.push(this.takara[takaraarrnum][2]);
+           player.openedTakarabakoNames.push(this.takara[takaraarrnum][3]);
            
      
          }
@@ -863,14 +958,50 @@ class MessageOnBattle {
      if(this.PlayerXmove !=0 || this.PlayerYmove != 0){
        return;
      }
-     if (direct == 'left' && this.CanMove('left'))
+     if (direct == 'left' && this.CanMove('left')){
        this.PlayerXmove -= blockSize;
-     if (direct == 'right' && this.CanMove('right'))
+       walkCountAftreBattle++;
+       //移動先がdoorTileで鍵を持っていたなら、underTileにする
+       if(this.doorTiles.includes( this.ArrMap[this.PlayerY / blockSize][this.PlayerX / blockSize -1] ) == true ){
+         if(this.canMoveTiles.includes(this.ArrMap[this.PlayerY / blockSize][this.PlayerX / blockSize -1]) == true  ){
+           this.ArrMap[this.PlayerY / blockSize][this.PlayerX / blockSize -1] = this.underTile;
+         }
+       }
+       this.appearance();
+     }
+     if (direct == 'right' && this.CanMove('right')){
        this.PlayerXmove += blockSize;
-     if (direct == 'up' && this.CanMove('up'))
+       walkCountAftreBattle++;
+       //移動先がdoorTileで鍵を持っていたなら、underTileにする
+       if (this.doorTiles.includes(this.ArrMap[this.PlayerY / blockSize][this.PlayerX / blockSize + 1]) == true) {
+         if (this.canMoveTiles.includes(this.ArrMap[this.PlayerY / blockSize][this.PlayerX / blockSize + 1]) == true) {
+           this.ArrMap[this.PlayerY / blockSize][this.PlayerX / blockSize + 1] = this.underTile;
+         }
+       }
+       this.appearance();
+     }
+     if (direct == 'up' && this.CanMove('up')){
        this.PlayerYmove -= blockSize;
-     if (direct == 'down' && this.CanMove('down'))
+       walkCountAftreBattle++;
+       //移動先がdoorTileで鍵を持っていたなら、underTileにする
+       if (this.doorTiles.includes(this.ArrMap[this.PlayerY / blockSize -1][this.PlayerX / blockSize]) == true) {
+         if (this.canMoveTiles.includes(this.ArrMap[this.PlayerY / blockSize -1][this.PlayerX / blockSize]) == true) {
+           this.ArrMap[this.PlayerY / blockSize -1][this.PlayerX / blockSize] = this.underTile;
+         }
+       }
+       this.appearance();
+     }
+     if (direct == 'down' && this.CanMove('down')){
        this.PlayerYmove += blockSize;
+       walkCountAftreBattle++;
+       //移動先がdoorTileで鍵を持っていたなら、underTileにする
+       if (this.doorTiles.includes(this.ArrMap[this.PlayerY / blockSize +1][this.PlayerX / blockSize]) == true) {
+         if (this.canMoveTiles.includes(this.ArrMap[this.PlayerY / blockSize +1][this.PlayerX / blockSize]) == true) {
+           this.ArrMap[this.PlayerY / blockSize +1][this.PlayerX / blockSize] = this.underTile;
+         }
+       }
+       this.appearance();
+     }
    }
    
    CanMove(direct) {
@@ -879,10 +1010,11 @@ class MessageOnBattle {
    
        let char1 = this.ArrMap[playerRow][Math.floor(this.PlayerX / blockSize)];
        let char2 = this.ArrMap[playerRow][Math.ceil(this.PlayerX / blockSize)];
-       if (char1 != '、' && char1 != '段' && char1 != '床')
-         return false;
-       if (char2 != '、' && char2 != '段' && char2 != '床')
-         return false;
+       
+       if (this.canMoveTiles.includes(char1) == false)
+           return false;
+       if (this.canMoveTiles.includes(char2) == false)
+           return false;
    
        return true;
      }
@@ -891,10 +1023,10 @@ class MessageOnBattle {
    
        let char1 = this.ArrMap[playerRow][Math.floor(this.PlayerX / blockSize)];
        let char2 = this.ArrMap[playerRow][Math.ceil(this.PlayerX / blockSize)];
-   
-       if (char1 != '、' && char1 != '段' && char1 != '床')
+       
+       if (this.canMoveTiles.includes(char1) == false ) 
          return false;
-       if (char2 != '、' && char2 != '段' && char2 != '床')
+       if (this.canMoveTiles.includes(char2) == false)
          return false;
    
        return true;
@@ -904,11 +1036,11 @@ class MessageOnBattle {
    
        let char1 = this.ArrMap[Math.floor(this.PlayerY / blockSize)][playerCol];
        let char2 = this.ArrMap[Math.ceil(this.PlayerY / blockSize)][playerCol];
-      // console.log(char2);
-       if (char1 != '、' && char1 != '段' && char1 != '床' && char1 != '橋')
-         return false;
-       if (char2 != '、' && char2 != '段' && char2 != '床' && char2 != '橋')
-         return false;
+       
+       if (this.canMoveTiles.includes(char1) == false)
+           return false;
+       if (this.canMoveTiles.includes(char2) == false)
+           return false;
    
        return true;
      }
@@ -917,21 +1049,42 @@ class MessageOnBattle {
    
        let char1 = this.ArrMap[Math.floor(this.PlayerY / blockSize)][playerCol];
        let char2 = this.ArrMap[Math.ceil(this.PlayerY / blockSize)][playerCol];
-   
-       if (char1 != '、' && char1 != '段' && char1 != '床' && char1 != '橋')
-         return false;
-       if (char2 != '、' && char2 != '段' && char2 != '床' && char2 != '橋')
-         return false;
+       
+       if (this.canMoveTiles.includes(char1) == false)
+           return false;
+       if (this.canMoveTiles.includes(char2) == false)
+           return false;
    
        return true;
      }
    }
    
    MoveEvent(l = 0,r = 0,u = 0,d = 0){
+     //強制的に移動させる
      this.PlayerXmove -= blockSize * l;
      this.PlayerXmove += blockSize * r;
      this.PlayerYmove -= blockSize * u;
      this.PlayerYmove += blockSize * d;
+   }
+   
+   appearance(){
+     //エンカウントの処理
+     if(this.isAppearance == false)return;
+     if(walkCountAftreBattle <= minAppearanceWalkCount)return;
+     let _random = randomNum(1,100);
+     if(_random > this.appearanceRate)return;
+     //エンカウント発生
+     //どのenemyか決定する処理
+     let _random_ = randomNum(1,this.enemySyutugendos[this.enemySyutugendos.length -1]);
+     let _num;
+     for (var i = 0; i < this.enemySyutugendos.length; i++) {
+       let _min = 0;
+       if(i != 0)_min = this.enemySyutugendos[i -1];
+       let _max = this.enemySyutugendos[i];
+       if(_random_ > _min && _random_ <= _max){_num = i; continue;}
+     }
+     //バトル
+     game.battleAdd(this.appearanceEnemyNums[_num]);
    }
    
    Draw() {
@@ -975,69 +1128,18 @@ class MessageOnBattle {
          if (this.ArrMap[row][col] == '黒') {
            ctx.fillStyle = 'black';
            ctx.fillRect(col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
+         }else
+         
+         if(this.onTiles.includes(this.ArrMap[row][col]) == false){
+           
+           ctx.drawImage(this.tileImages[this.ArrMap[row][col]], col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
+           
+         }else if(this.onTiles.includes(this.ArrMap[row][col]) == true){
+           
+           ctx.drawImage(this.tileImages[this.underTile], col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
+           ctx.drawImage(this.tileImages[this.ArrMap[row][col]], col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
+           
          }
-         if (this.ArrMap[row][col] == '壁') {
-           ctx.fillStyle = '#000';
-           ctx.fillRect(col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         }
-         if (this.ArrMap[row][col] == '棚') {
-           ctx.drawImage(mekatanaImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         }
-         if (this.ArrMap[row][col] == '、' || this.ArrMap[row][col] == '○')
-           ctx.drawImage(flatImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '段')
-           ctx.drawImage(stairsImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '壁')
-           ctx.drawImage(wallImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '王') {
-           ctx.drawImage(floorImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-           ctx.drawImage(kingImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         }
-         if (this.ArrMap[row][col] == '敵') {
-           ctx.drawImage(floorImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-           ctx.drawImage(devilImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         }
-         if (this.ArrMap[row][col] == '床')
-           ctx.drawImage(floorImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == 'Ｍ' || this.ArrMap[row][col] == '・' || this.ArrMap[row][col] == '箱' ||this.ArrMap[row][col] == '空'||this.ArrMap[row][col] == '糞' ||this.ArrMap[row][col] == '医'||this.ArrMap[row][col] == '画' || this.ArrMap[row][col] == '粘') {
-           if (this.ArrMap[row - 1][col] == '～')
-             ctx.fillRect(col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-           else
-             ctx.drawImage(flatImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         }
-         if (this.ArrMap[row][col] == '～')
-           ctx.fillRect(col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '橋')
-           ctx.fillRect(col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-       }
-     }
-   
-     for (let row = 0; row < this.RowMax; row++) {
-       for (let col = 0; col < this.ColMax; col++) {
-         if (this.ArrMap[row][col] == 'Ｍ')
-           ctx.drawImage(mountainImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize , blockSize );
-         if (this.ArrMap[row][col] == '箱')
-          ctx.drawImage(boxImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '空')
-          ctx.drawImage(boxemptyImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '糞')
-           ctx.drawImage(unkoImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '医')
-           ctx.drawImage(docterImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '画')
-           ctx.drawImage(monitorImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '粘')
-           ctx.drawImage(slimeImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-         if (this.ArrMap[row][col] == '城') {
-           ctx.drawImage(flatImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-           ctx.drawImage(castle1Image, col * blockSize + shiftX, row * blockSize + shiftY, blockSize * 3, blockSize * 3);
-         }
-         if (this.ArrMap[row][col] == '魔') {
-           ctx.drawImage(flatImage, col * blockSize + shiftX, row * blockSize + shiftY, blockSize, blockSize);
-           ctx.drawImage(castle2Image, col * blockSize + shiftX, row * blockSize + shiftY, blockSize * 3, blockSize * 3);
-         }
-         if (this.ArrMap[row][col] == '橋')
-           ctx.drawImage(bridgeImage, col * blockSize + shiftX, row * blockSize + shiftY + 8, blockSize, blockSize);
        }
      }
    
@@ -1046,31 +1148,7 @@ class MessageOnBattle {
    
      if (message != '' && isbattlenow == false) {
        messageNext.Draw();
-       /*上記処理に変更
-       ctx.beginPath();
-       ctx.fillStyle = '#000';
-       ctx.rect(120, 340, 320, 80);
-       ctx.fill();
-       ctx.strokeStyle = 'white';
-       ctx.lineWidth = 2;
-       ctx.stroke(); 
-       
-       ctx.font = "14px ＭＳ ゴシック";
-       ctx.fillStyle = 'white';
-       let texts = message.split('\n');
-       ctx.fillText(texts[0], 140, 370);
-       if (texts.length > 1){
-         ctx.fillText(texts[1], 140, 390);
-       }
-       if(canMessageNext == true){
-         ctx.fillText('▼',415,410);
-       }
-       //face画像の描画
-       if (message != '' && messageNext.face != null) {
-         ctx.drawImage(messageNext.face,0,0,320,320,35,339,82,82 );
-       }
-       ctx.closePath();
-       */
+
      }
      
    
@@ -1079,15 +1157,22 @@ class MessageOnBattle {
      //DrawHPMP();
    }
    
+   
+   
    takaraImageRefresh() {
      //アイテムを持っていたら空箱の画像にする
      for (let x = 0; x < this.takara.length; x++) {
-       if (player.items.includes(this.takara[x][2])) this.ArrMap[this.takara[x][0]][this.takara[x][1]] = '空';
+       if (player.openedTakarabakoNames.includes(this.takara[x][3])) this.ArrMap[this.takara[x][0]][this.takara[x][1]] = '空';
      }
    }
    
    refresh(){
      this.takaraImageRefresh();
+     
+     //持ってる鍵によって、doorTileを通行可能とする
+     if (player.items.includes(101) == true) {
+       this.canMoveTiles.push('戸');
+     }
      
    }
    
@@ -1157,7 +1242,7 @@ class MessageOnBattle {
    ctx.font = "18px ＭＳ ゴシック";
    ctx.fillText(`HP ${player.hp} / ${player.maxhp}`, 14, 20+10);
    ctx.fillText(`MP ${player.mp} / ${player.maxmp}`, 14, 38+10);
-   ctx.fillText(`EXP ${player.exp} / 100`, 14, 56+10);
+   ctx.fillText(`EXP ${player.exp} / ${player.maxexp}`, 14, 56+10);
    ctx.closePath();
  }
  
@@ -1174,10 +1259,9 @@ class MessageOnBattle {
      super(mapText);
      this.talking = false;
      this.Init();
-     this.takara = [[10,7,1]]; //配列内に[row,col,itemnumber]を入れる
+     this.takara = [[10,7,1,'あ']]; //配列内に[row,col,itemnumber,takarabakoName]を入れる
      
-     //if(player.items.includes(1) == true)this.ArrMap[10][7] = '空;'
-     this.takaraImageRefresh();
+     this.refresh();
        
    }
    
@@ -1198,24 +1282,15 @@ class MessageOnBattle {
       }
       if (direct == 'down' && this.PlayerX == blockSize * 4 && this.PlayerY == blockSize * 11) {
         homeField.refresh();
-        homeField.Init();
-        blackoutFunc(homeField);
+        blackoutFunc(1,0,7,1);
         return;
       }
       
       //デバッグ用
       if(direct == 'left' && this.PlayerX == blockSize*1 && this.PlayerY == blockSize*1){
-        let _img = new Image();
-        let _src = './image/enemy_slime.png';
-        let _enemy = {
-          name: 'スライム',
-          hp: 2,
-          pow: 500,
-          exp:1000,
-          imgsrc: _src
-        };
-        
-        game.battleAdd(_enemy);
+        game.battleAdd(0);
+        if(player.items.includes(101) == false)player.items.push(101);
+        this.refresh();
       }
       
       
@@ -1223,6 +1298,7 @@ class MessageOnBattle {
      
    }
    
+   /*
    talk(){
      StopPlayer();
      if (this.talking || player.items.includes(1) == true)
@@ -1242,19 +1318,7 @@ class MessageOnBattle {
        player.items.push(1);
        
      }
-     /*let talkSpeed = 2000;
-     message = `${playerName}さまの健闘をお祈りします。`;
-     setTimeout(() => {
-       message = `${playerName}の体力が全回復した。`;
-       playerHP = playerMaxHP;
-       playerMP = playerMaxMP;
-     }, talkSpeed);
-     setTimeout(() => {
-       message = '';
-       this.talking = false;
-     }, talkSpeed * 2); */
-     
-   }
+   }*/
  }
  
  class HomeField extends BaseMap{
@@ -1262,9 +1326,9 @@ class MessageOnBattle {
      super(maptext);
      this.Init();
      this.talking = false;
-     this.takara = [[17,1,11]];
+     this.takara = [[17,1,11,'い']];
      
-     this.takaraImageRefresh();
+     this.refresh();
    }
    Init() {
      this.PlayerX = 7 * blockSize;
@@ -1278,7 +1342,11 @@ class MessageOnBattle {
          mapField.PlayerX = 4 * blockSize;
          mapField.PlayerY = 11 * blockSize;
          mapField.refresh();
-         blackoutFunc(mapField);
+         blackoutFunc(0);
+         return;
+       }
+       if (direct == 'right' && this.PlayerX == blockSize * 18 && this.PlayerY == blockSize * 5) {
+         blackoutFunc(2,0,1,7);
          return;
        }
        if (direct == 'left' && this.PlayerX == blockSize * 2 && this.PlayerY == blockSize * 17) {
@@ -1295,7 +1363,7 @@ class MessageOnBattle {
            let _face = new Image();
            _face.src = './image/face_docter.png';
            messageNext.face = _face;
-           messageAdd(['ねもい…']);
+           messageAdd(['そこのパソコンを使えば\nふっかつのじゅもんが見れますよ']);
          }
        }
        if (direct == 'down' && this.PlayerX == blockSize * 3 && this.PlayerY == blockSize * 11) {
@@ -1303,16 +1371,7 @@ class MessageOnBattle {
            let _face = new Image();
            _face.src = './image/face_docter.png';
            messageNext.face = _face;
-           messageNext.eventtime = 1000;
-           /*messageNext.event = ()=>{
-             game.scene.MoveEvent(0,5,0,3);
-             setTimeout(()=>{
-               messageNext.eventtime = 2000;
-             },100);
-             messageNext.event = ()=>{
-               blackoutFunc(null,2000);
-             };
-           }; */
+           messageNext.eventtimes['a'] = 1000;
            messageNext.events['a'] = ()=>{
              game.scene.MoveEvent(0,5,0,3);
            };
@@ -1352,38 +1411,14 @@ class MessageOnBattle {
            setTimeout(()=>{
              this.ArrMap[5][9] = '粘';
            },600);
-           /*messageNext.event = () => {
-             blackoutFunc(null,1000);
-             setTimeout(() => {
-               messageNext.eventtime = 200;
-             }, 100);
-             messageNext.event = () => {
-               let  _imgsrc = './image/enemy_slime.png';
-               let _enemy = {
-                 name: 'スライム',
-                 hp:40,
-                 pow:5,
-                 exp:10,
-                 imgsrc:_imgsrc
-               };
-               game.battleAdd(_enemy,'チュートリアル');
-             };
-           };
-           */
+
            messageNext.events['a'] = ()=>{
              blackoutFunc(null,1000);
            };
            messageNext.eventtimes['a'] = 1000;
            messageNext.events['b'] = () => {
-             let _imgsrc = './image/enemy_slime.png';
-             let _enemy = {
-               name: 'スライム',
-               hp: 40,
-               pow: 5,
-               exp: 10,
-               imgsrc: _imgsrc
-             };
-             game.battleAdd(_enemy, 'チュートリアル');
+             
+             game.battleAdd(1, 'チュートリアル');
            };
            messageNext.eventtimes['b'] = 200;
        
@@ -1397,6 +1432,44 @@ class MessageOnBattle {
            return;
          }
        }
+       if(direct == 'down' && this.PlayerX == blockSize * 8 && this.PlayerY == blockSize * 16){
+         //ふっかつのじゅもんを表示
+         messageAdd(['『ふっかつのじゅもんを更新します』']);
+         //じゅもん生成
+         let _jumon = '';
+         _jumon += player.maxhp + '/';
+         _jumon += player.maxmp + '/';
+         _jumon += player.exp + '/';
+         _jumon += player.maxexp + '/';
+         _jumon += 0 + '/';
+         for (var i = 0; i < player.items.length; i++) {
+           _jumon += player.items[i];
+           if(i != player.items.length -1)_jumon += 'l';
+         }
+         _jumon += '/';
+         for (var i = 0; i < player.soubi.length; i++) {
+           _jumon += player.soubi[i];
+           if (i != player.soubi.length - 1) _jumon += 'l';
+         }
+         _jumon += '/';
+         _jumon += player.foot + '/';
+         _jumon += (player.maxhp + player.maxexp) + '/';
+         for (var i = 0; i < player.openedTakarabakoNames.length; i++) {
+           _jumon += player.openedTakarabakoNames[i];
+           if (i != player.openedTakarabakoNames.length - 1) _jumon += 'l';
+         }
+         _jumon += '/';
+         for (var i = 0; i < player.kaisyuuki.length; i++) {
+           _jumon += player.kaisyuuki[i];
+           if (i != player.kaisyuuki.length - 1) _jumon += 'l';
+         }
+         _jumon += '/';
+         _jumon += player.needflag + '/';
+         _jumon += (player.exp * player.needflag);
+         $('jumonHyoujiDiv').innerHTML = 'ふっかつのじゅもん:' + '<br>' + _jumon;
+         return;
+       }
+       
        super.Move(direct);
    }
    refresh(){
@@ -1412,30 +1485,59 @@ class MessageOnBattle {
        player.kaisyuuki[0] = 1;
        this.ArrMap[5][9] = '、';
        
-       blackoutFunc(null,1000,8,14);
-       console.log('flag:' + player.needflag);
-       messageAdd([
-         '『おそらく今のモンスターは\n研究室から脱走したのでしょう』',
-         '『研究室に通信してみます…』',
-         '『……』',
-         '『ダメです、繋がりません…』',
-         '『ひょっおほ先生、\nモンスターを倒しつつ』',
-         '『研究室に向かってください。』',
-         '『先生には自己修復機能が\nありますので』',
-         '『戦闘を終えると回復します。』',
-         '『それと、自動回収機を渡しておきます。』',
-         '『もしやられても\nここに連れ戻しますので』',
-         '『ご安心を。』',
-         '『では、お願いします。』'
-       ]);
+       blackoutFunc(null,1500,8,14);
+       //console.log('flag:' + player.needflag);
+       let _face = new Image();
+       _face.src = './image/face_docter.png';
+       messageNext.face = _face;
+       setTimeout(()=>{
+         messageAdd([
+           '『おそらく今のモンスターは\n研究室から脱走したのでしょう』',
+           '『研究室に通信してみます…』',
+           '『……』',
+           '『ダメです、繋がりません…』',
+           '『ひょっおほ先生、\nモンスターを倒しつつ』',
+           '『研究室に向かってください。』',
+           '『先生には自己修復機能が\nありますので』',
+           '『戦闘を終えると回復します。』',
+           '『それと、自動回収機を渡しておきます。』',
+           '『もしやられても\nここに連れ戻しますので』',
+           '『ご安心を。』',
+           '『では、お願いします。』'
+         ])},500);
      }
    }
  }
  
  
+ class Map3Field extends BaseMap{
+   constructor(_maptxt){
+     super(_maptxt);
+     this.talking = false;
+     //this.takara = [[17, 1, 11, 'い']];
+     this.setEnemy(1);
+     this.setEnemy(2);
+   }
+   
+   Move(direct){
+     if (!started || message != '' || blackout[0] > 0)return;
+     
+     if (direct == 'left' && this.PlayerX == blockSize * 1 && this.PlayerY == blockSize * 7) {
+       blackoutFunc(1, 0, 18, 5);
+       return;
+     }
+     
+     super.Move(direct);
+   }
+ };
+ 
  
  let mapField = new MapField(map1Text);
  let homeField = new HomeField(homemap);
+ let map3Field = new Map3Field(map3);
+ maps[0].obj = mapField;
+ maps[1].obj = homeField;
+ maps[2].obj = map3Field;
  
  let title = new Title();
  let game = new Game();
@@ -1502,9 +1604,13 @@ class MessageOnBattle {
      if(blackout[0] >= 1 && blackout[1] != null){
        game.add(blackout[1]);
        blackout[1] = null;
+     }else if(blackout[0] >=1 && blackout[1] == null){
+       blackoutMove1();
+       blackoutMove2();
      }
-     let frame = 8;
-     frame = frame /2 /100 ;
+     let frame = 1/25;
+     if(blackout[4] >0)frame = 1/blackout[4];
+     
      if(blackout[2] == 'up'){
        blackout[0] += frame;
        if(blackout[0] >= 1){
@@ -1664,32 +1770,123 @@ class MessageOnBattle {
    mainloop();
  }
  
-
+ 
  
  function InitPlayerPosition() {
    mapField.Init();
  }
  
+ 
  function titleOnclick(){
-   //ふっかつのじゅもんを読み込む処理
    
+   //じゅもんが不正だった時の文言表示
+   let jumonIsFalse = function(){
+     
+   }
+   
+   //ふっかつのじゅもんを読み込む処理
+   if($('hukkatuinput').value != ''){
+     let _input = $('hukkatuinput').value;
+     let _inputarr = _input.split('/');
+     const _inputarrTruthLength = 13;
+     let isInputarrTrurh = function(){
+       console.log(_inputarr);
+       if(_inputarr.length != _inputarrTruthLength )return false;
+       if(Number(_inputarr[4]) != 0)return false;
+       if(Number(_inputarr[8]) != Number(_inputarr[0]) + Number(_inputarr[3]))return false;
+       if(Number(_inputarr[12]) != Number(_inputarr[2]) * Number(_inputarr[7]))return false;
+       if(Number(_inputarr[0]) == NaN)return false;
+       if(Number(_inputarr[1]) == NaN)return false;
+       if(Number(_inputarr[2]) == NaN)return false;
+       if(Number(_inputarr[3]) == NaN)return false;
+       if(Number(_inputarr[4]) == NaN)return false;
+       if(Number(_inputarr[7]) == NaN)return false;
+       if(Number(_inputarr[8]) == NaN)return false;
+       if(Number(_inputarr[11]) == NaN)return false;
+       if(Number(_inputarr[12]) == NaN)return false;
+       return true;
+     }
+     
+     if(isInputarrTrurh() == false){
+       jumonIsFalse();
+       return;
+     }
+     
+     //じゅもんからplayerに代入していく
+     player.maxhp = Number(_inputarr[0]);
+     player.hp = player.maxhp;
+     player.maxmp = Number(_inputarr[1]);
+     player.mp = player.maxmp;
+     player.exp = Number(_inputarr[2]);
+     player.maxexp = Number(_inputarr[3]);
+     let _itemarr = _inputarr[5].split('l');
+     console.log(_inputarr[5].split('l'));
+     player.items = [].concat(_itemarr);
+     for (var i = 0; i < player.items.length; i++) {
+       player.items[i] = Number( player.items[i] );
+     }
+     let _soubiarr = _inputarr[6].split('l');
+     player.soubi = [].concat( _soubiarr);
+     for (var i = 0; i < player.soubi.length; i++) {
+       player.soubi[i] = Number(player.soubi[i]);
+     }
+     player.foot = Number(_inputarr[7]);
+     let _openTakarabakoNamesArr = _inputarr[9].split('l');
+     player.openedTakarabakoNames = [].concat(_openTakarabakoNamesArr);
+     let _kaisyuukiarr = _inputarr[10].split('l');
+     player.kaisyuuki = [].concat(_kaisyuukiarr);
+     for (var i = 0; i < player.kaisyuuki.length; i++) {
+       player.kaisyuuki[i] = Number(player.kaisyuuki[i]);
+     }
+     player.needflag = Number(_inputarr[11]);
+     
+     console.log(player);
+     /*
+     _input: player.maxhp/player.maxmp/player.exp/player.maxexp/0/player.items(lで区切る)/player.soubi(lで区切る)/player.foot/player.maxhp + player.maxexp/player.openTakarabakoNames(lで区切る)/player.kaisyuuki(lで区切る)/player.needflag/player.exp * player.foot
+     メモ
+     class Player {
+       constructor() {
+         this.name = playerName;
+         this.maxhp = playerMaxHP;
+         this.hp = playerHP;
+         this.maxmp = playerMaxMP;
+         this.mp = playerMP;
+         this.exp = 0;
+         this.maxexp = 100;
+         this.items = [];
+         this.soubi = [0, 0, 0, 0, 0, 0, 0, 0];
+         this.foot = 1;
+         this.openedTakarabakoNames = [];
+         this.kaisyuuki = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+         this.needflag = 0; //ゲーム進行に必要な避けれないフラグ　加算していく
+     
+       }
+     }
+     */
+   }
    
    
    ShowTitleButtons(false);
    $abutton.style.display = 'block';
    $bbutton.style.display = 'block';
    $menubutton.style.display = 'block';
+   setTimeout(()=>{game.isTitle = false;},2000);
    messageNext.eventtime = 5000 / 5;
    messageNext.event = ()=>{
      game.dontmove(5000 / 5);
    }
    if(player.needflag == 0){
-     //はじめから
-     //messageAdd(['event','ピピピ…','『ひょっおほ先生、聞こえますか』','『ログイン状態は確認できるのですが』','『メッセージ送信機能が\n壊れているようですね…』','『動けるようでしたら至急、\n 管制室まで来てください』']); 
+ 
      mapField.refresh();
-     blackoutFunc(mapField,2000 / 2);
+     blackoutFunc(0,2000);
+     messageNext.events['a'] = ()=>{game.dontmove(5000 / 5);};
+     messageNext.eventtimes['a'] = 5000/5 -100;
+     messageAdd(['intervalChange','2500','event','a','ピピピ…','intervalChange','1000','『ひょっおほ先生、聞こえますか』','『ログイン状態は確認できるのですが』','『メッセージ送信機能が\n壊れているようですね…』','『動けるようでしたら至急、\n 管制室まで来てください』']); 
+     
    }else{
      //つづきから
+     homeField.refresh();
+     blackoutFunc(1,2000 / 2,8,16);
      
    }
    
@@ -1697,36 +1894,49 @@ class MessageOnBattle {
    
  }
  
- function blackoutFunc(nextField = null,antenjikan = 0,playerxzahyou = null,playeryzahyou = null){
+ let blackoutMove1 = function(){};  //下のfunctionでオーバーライドする。Draw()で使用したら空に戻す。
+ let blackoutMove2 = function(){};
+ 
+ function blackoutFunc(nextFieldNum = null,antenjikan = 0,playerxzahyou = null,playeryzahyou = null,frame = 25){
+   //frameフレームで暗く→antenjikanの間真っ暗→frameフレームで明るく
+   walkCountAftreBattle = 0;
+   
    blackout[0] = 0.01;
-   blackout[1] = nextField;
+   if(nextFieldNum != null){
+     maps[nextFieldNum].obj.refresh();
+     blackout[1] = maps[nextFieldNum].obj;
+   }else{
+     blackout[1] = null;
+   }
    if(playerxzahyou != null){
-     if(nextField == null){
-       game.scene.PlayerX = playerxzahyou * blockSize;
+     if(nextFieldNum == null){
+      blackoutMove1 = ()=>{
+        game.scene.PlayerX = playerxzahyou * blockSize;
+        blackoutMove1 = ()=>{};
+      }
      }else{
        blackout[1].PlayerX = playerxzahyou * blockSize;
      }
    }
    if(playeryzahyou != null){
-     if (nextField == null) {
-       game.scene.PlayerY = playeryzahyou * blockSize;
+     if (nextFieldNum == null) {
+       blackoutMove2 = ()=>{
+         game.scene.PlayerY = playeryzahyou * blockSize;
+         blackoutMove2 = ()=>{};
+       }
      } else {
        blackout[1].PlayerY = playeryzahyou * blockSize;
      }
    }
    blackout[2] = 'up';
    blackout[3] = antenjikan;
+   blackout[4] = frame;
  }
 
 function messageAdd(_messagesarray){
   messageNext.add(_messagesarray);
   messageNext.read();
-  /*
-  canMessageNext = false;
-  setTimeout(function() {
-    canMessageNext = true;
-  }, 1000);
-  */
+
 }
 
 class Motimonomenu{
@@ -1908,8 +2118,7 @@ class Motimonomenu{
     
   }
   bclick(){
-    game.add(lastField[0]);
-    lastField = [];
+    game.menu = null;
   }
 }
 
@@ -2111,8 +2320,7 @@ class Soubimenu{
     if(this.selected >=0){
       this.selected = -this.foot -1;
     }else{
-      game.add(lastField[0]);
-      lastField = [];
+      game.menu = null;
     }
   }
 }
@@ -2145,17 +2353,15 @@ function aOnclick(){
       //もちもの
       menuSelected = [0,0,0];
       isMenuOpen = false;
-      lastField.push(game.scene);
       let motimonomenu = new Motimonomenu(player);
-      game.add(motimonomenu);
+      game.menu=motimonomenu;
       
     }else if(menuSelected[0] == 2){
       //そうび
       menuSelected = [0, 0, 0];
       isMenuOpen = false;
-      lastField.push(game.scene);
       let soubimenu = new Soubimenu(player);
-      game.add(soubimenu);
+      game.menu=soubimenu;
       
     }
     
