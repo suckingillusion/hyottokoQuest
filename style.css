@@ -1,5 +1,7 @@
 #main {
     position: relative;
+    text-align: left;
+    background: dimgray;
 }
 #fight {
     position: absolute;
