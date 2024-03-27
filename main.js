@@ -917,7 +917,7 @@ class MessageOnBattle {
      if(this.appearanceEnemyNums.length == 1){
        this.enemySyutugendos.push(_syutugendo);
      }else{
-       this.enemySyutugendos.push(_syutugendo + this.enemyRates[this.appearanceEnemyNums.length -2]);
+       this.enemySyutugendos.push(_syutugendo + this.enemySyutugendos[this.appearanceEnemyNums.length -2]);
      }
    }
    
